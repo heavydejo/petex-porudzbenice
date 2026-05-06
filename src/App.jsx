@@ -117,7 +117,7 @@ export default function App() {
 
     if (error) return alert("Greška pri čitanju narudžbi: " + error.message);
 
-    const normalized = (data || []).map(normalizeOrder);
+    const normalized = (data || []).map(normalizeOrder).filter((o) => o.status !== "Obrisano");
     setOrders(normalized);
     setForm((prev) => ({ ...prev, orderNo: makeOrderNumber(normalized.length) }));
   }
@@ -191,12 +191,16 @@ export default function App() {
   }
 
   async function deleteOrder(order) {
-    const answer = prompt(`Za brisanje narudžbe #${order.orderNo} ukucajte OBRISI`);
+    const answer = prompt(`Za uklanjanje narudžbe #${order.orderNo} iz pregleda ukucajte OBRISI`);
     if (answer !== "OBRISI") return alert("Brisanje otkazano.");
-    const { error } = await supabase.from("orders").delete().eq("id", order.id);
+
+    const { error } = await supabase.from("orders").update({ status: "Obrisano" }).eq("id", order.id);
     if (error) return alert("Greška pri brisanju: " + error.message);
+
     setOrders(orders.filter((o) => o.id !== order.id));
     if (selectedOrder?.id === order.id) setSelectedOrder(null);
+    setMessage(`Narudžba #${order.orderNo} je uklonjena iz pregleda.`);
+    setTimeout(() => setMessage(""), 3500);
   }
 
   async function updateStatus(order, status) {
@@ -266,7 +270,7 @@ export default function App() {
             <Field label="Isporuka *"><select value={form.delivery} onChange={(e) => setForm({ ...form, delivery: e.target.value })}><option>DA</option><option>NE</option></select></Field>
           </div>
 
-          <ItemsTable items={form.items} updateItem={updateItem} editable />
+          <ItemsTable items={form.items} updateItem={updateItem} editable showCheck={false} />
 
           <div style={{marginTop:15}}>
             <Field label="Napomena"><input placeholder="Npr. hitno, izmiješati artikle, posebna napomena..." value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></Field>
@@ -344,7 +348,7 @@ function AdminList({ orders, search, setSearch, setSelectedOrder, setView, delet
           <div className="order-row" key={order.id}>
             <div>
               <b>#{order.orderNo} — {order.buyer}</b>
-              <div className="meta">{order.date} · {order.phone} · {order.city || "bez grada"} · {s.lines} stavki · ukupno {s.total} · <span className={statusClass(order.status)}>{order.status}</span></div>
+              <div className="meta">{order.date} · {order.phone} · {order.city || "bez grada"} · {s.lines} stavki · ukupno {s.total}{order.status !== "Nova" && <> · <span className={statusClass(order.status)}>{order.status}</span></>}</div>
               {order.note && <div className="note-small">Napomena: {order.note}</div>}
             </div>
             <div>
@@ -372,7 +376,7 @@ function WarehouseList({ orders, search, setSearch, setSelectedOrder, setView })
           <div className="order-row warehouse-card" key={order.id}>
             <div>
               <b>#{order.orderNo} — {order.buyer}</b>
-              <div className="meta">{s.lines} stavki · ukupno {s.total} · Isporuka: {order.delivery} · <span className={statusClass(order.status)}>{order.status}</span></div>
+              <div className="meta">{s.lines} stavki · ukupno {s.total} · Isporuka: {order.delivery}{order.status !== "Nova" && <> · <span className={statusClass(order.status)}>{order.status}</span></>}</div>
               {order.note && <div className="note-small">Napomena: {order.note}</div>}
             </div>
             <div>
@@ -391,7 +395,7 @@ function Picking({ order, togglePicked, updateStatus, setView, isWarehousePage }
   return (
     <div className="card no-print">
       <h2>Izdvajanje robe — #{order.orderNo}</h2>
-      <p><b>{order.buyer}</b> · {s.lines} stavki · ukupno {s.total} · <span className={statusClass(order.status)}>{order.status}</span></p>
+      <p><b>{order.buyer}</b> · {s.lines} stavki · ukupno {s.total}{order.status !== "Nova" && <> · <span className={statusClass(order.status)}>{order.status}</span></>}</p>
       {order.note && <div className="note-big">Napomena: {order.note}</div>}
       {order.items.map((item, index) => (
         <button key={index} className={"pick-row " + (item.picked ? "picked" : "")} onClick={() => togglePicked(order, index)}>
@@ -432,13 +436,12 @@ function PrintA4({ order, back, type }) {
         <p><b>Telefon:</b> {order.phone}</p>
         <p><b>Grad:</b> {order.city || "-"}</p>
         <p><b>Isporuka:</b> {order.delivery}</p>
-        <p><b>Status:</b> {order.status}</p>
         <p><b>Ukupno:</b> {s.lines} stavki · ukupno {s.total}</p>
       </div>
 
       {order.note && <p className="print-note"><b>Napomena:</b> {order.note}</p>}
 
-      <ItemsTable items={order.items} />
+      <ItemsTable items={order.items} showCheck={isWarehouse} />
 
       <div className="sign-row">
         <div>Pripremio / magacin<br /><span></span></div>
@@ -449,11 +452,11 @@ function PrintA4({ order, back, type }) {
   );
 }
 
-function ItemsTable({ items, editable, updateItem }) {
+function ItemsTable({ items, editable, updateItem, showCheck = true }) {
   return (
     <table>
       <thead>
-        <tr><th className="col-rb">rb.</th><th>Šifra / artikal</th><th className="col-qty">Kol.</th><th className="col-unit">JM</th><th className="col-check">✓</th></tr>
+        <tr><th className="col-rb">rb.</th><th>Šifra / artikal</th><th className="col-qty">Kol.</th><th className="col-unit">JM</th>{showCheck && <th className="col-check">✓</th>}</tr>
       </thead>
       <tbody>
         {items.map((item, index) => (
@@ -462,7 +465,7 @@ function ItemsTable({ items, editable, updateItem }) {
             <td>{editable ? <input placeholder="Šifra / artikal" value={item.article} onChange={(e) => updateItem(index, "article", e.target.value)} /> : item.article}</td>
             <td className="col-qty">{editable ? <input placeholder="Kol." value={item.qty} onChange={(e) => updateItem(index, "qty", e.target.value)} /> : <b>{item.qty}</b>}</td>
             <td className="col-unit">{editable ? <select value={item.unit || "kom"} onChange={(e) => updateItem(index, "unit", e.target.value)}><option>kom</option><option>pak</option><option>kart</option><option>set</option></select> : (item.unit || "kom")}</td>
-            <td className="col-check">□</td>
+            {showCheck && <td className="col-check">□</td>}
           </tr>
         ))}
       </tbody>
@@ -517,7 +520,7 @@ function Style() {
     table { width:100%; border-collapse:collapse; margin-top:18px; table-layout:fixed; }
     th,td { border:1px solid #d1d5db; padding:9px; text-align:left; vertical-align:middle; }
     th { background:#f3f4f6; font-size:14px; }
-    .col-rb { width:48px; text-align:center; } .col-qty { width:86px; } .col-unit { width:82px; } .col-check { width:44px; text-align:center; }
+    .col-rb { width:48px; text-align:center; } .col-qty { width:82px; } .col-unit { width:58px; } .col-check { width:44px; text-align:center; }
     .order-row { border-bottom:1px solid #e5e7eb; padding:12px 0; display:flex; justify-content:space-between; gap:15px; align-items:center; }
     .warehouse-card { border:1px solid #e5e7eb; border-radius:14px; padding:14px; margin:10px 0; }
     .meta, .hint { color:#64748b; font-size:14px; margin-top:4px; }
@@ -537,8 +540,8 @@ function Style() {
     .login-card img { width:180px; }
     @media(max-width:700px) {
       .page{padding:10px;} .card{padding:14px;border-radius:14px;} .grid,.info-grid,.top{grid-template-columns:1fr;display:block;} .order-row{display:block;}
-      .brand img{width:76px;} .brand h1{font-size:28px;} th,td{padding:5px;} .col-rb{width:30px;font-size:12px;} .col-qty{width:54px;} .col-unit{width:62px;} .col-check{width:28px;}
-      td input, td select{padding:8px 4px;font-size:13px;border-radius:8px;} th{font-size:12px;} .sign-row{grid-template-columns:1fr; gap:14px;}
+      .brand img{width:76px;} .brand h1{font-size:28px;} th,td{padding:5px;} .col-rb{width:30px;font-size:12px;} .col-qty{width:50px;} .col-unit{width:46px;} .col-check{width:28px;}
+      td input{padding:8px 4px;font-size:13px;border-radius:8px;} td select{padding:8px 2px;font-size:12px;border-radius:8px;} th{font-size:12px;} .sign-row{grid-template-columns:1fr; gap:14px;}
     }
     @media print {
       .no-print{display:none!important;} body{background:white;} .page{max-width:none;padding:0;} .card{box-shadow:none;border-radius:0;padding:0;} .print-card{font-size:12px;}
