@@ -45,6 +45,19 @@ function qtyNumber(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+
+function formatOrderNo(id) {
+  const year = new Date().getFullYear();
+  return `PET-${year}-${String(id).padStart(4, "0")}`;
+}
+
+function stavkaText(n) {
+  if (n === 1) return "1 stavka";
+  if (n >= 2 && n <= 4) return `${n} stavke`;
+  return `${n} stavki`;
+}
+
+
 function stats(items) {
   return {
     lines: items.length,
@@ -77,7 +90,7 @@ export default function App() {
   const [password, setPassword] = useState("");
 
   const [form, setForm] = useState({
-    orderNo: makeOrderNumber(0),
+    orderNo: "",
     buyer: "",
     phone: "",
     city: "",
@@ -119,7 +132,7 @@ export default function App() {
 
     const normalized = (data || []).map(normalizeOrder).filter((o) => o.status !== "Obrisano");
     setOrders(normalized);
-    setForm((prev) => ({ ...prev, orderNo: makeOrderNumber(normalized.length) }));
+    setForm((prev) => ({ ...prev, orderNo: "" }));
   }
 
   function unlock(type) {
@@ -156,7 +169,7 @@ export default function App() {
 
     setLoading(true);
     const payload = {
-      order_no: form.orderNo,
+      order_no: null,
       buyer: form.buyer,
       phone: form.phone,
       city: form.city,
@@ -168,18 +181,32 @@ export default function App() {
     };
 
     const { data, error } = await supabase.from("orders").insert(payload).select().single();
+
+    if (error) {
+      setLoading(false);
+      return alert("Greška pri slanju narudžbe: " + error.message);
+    }
+
+    const generatedOrderNo = formatOrderNo(data.id);
+    const { data: updatedData, error: updateError } = await supabase
+      .from("orders")
+      .update({ order_no: generatedOrderNo })
+      .eq("id", data.id)
+      .select()
+      .single();
+
     setLoading(false);
 
-    if (error) return alert("Greška pri slanju narudžbe: " + error.message);
+    if (updateError) return alert("Narudžba je snimljena, ali broj nije ažuriran: " + updateError.message);
 
-    const order = normalizeOrder(data);
+    const order = normalizeOrder(updatedData);
     setOrders([order, ...orders]);
     setSentOrder(order);
     setSelectedOrder(order);
     setView("sent");
 
     setForm({
-      orderNo: makeOrderNumber(orders.length + 1),
+      orderNo: "",
       buyer: "",
       phone: "",
       city: "",
@@ -262,7 +289,7 @@ export default function App() {
           <h2>Nova narudžba</h2>
 
           <div className="grid">
-            <ReadOnly label="Broj" value={form.orderNo} />
+            <ReadOnly label="Broj" value="Generiše se nakon slanja" />
             <ReadOnly label="Datum" value={form.date} />
             <Field label="Kupac / firma *"><input value={form.buyer} onChange={(e) => setForm({ ...form, buyer: e.target.value })} /></Field>
             <Field label="Telefon *"><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
@@ -348,7 +375,7 @@ function AdminList({ orders, search, setSearch, setSelectedOrder, setView, delet
           <div className="order-row" key={order.id}>
             <div>
               <b>#{order.orderNo} — {order.buyer}</b>
-              <div className="meta">{order.date} · {order.phone} · {order.city || "bez grada"} · {s.lines} stavki · ukupno {s.total}{order.status !== "Nova" && <> · <span className={statusClass(order.status)}>{order.status}</span></>}</div>
+              <div className="meta">{order.date} · {order.phone} · {order.city || "bez grada"} · {stavkaText(s.lines)} · ukupno {s.total}{order.status !== "Nova" && <> · <span className={statusClass(order.status)}>{order.status}</span></>}</div>
               {order.note && <div className="note-small">Napomena: {order.note}</div>}
             </div>
             <div>
@@ -376,7 +403,7 @@ function WarehouseList({ orders, search, setSearch, setSelectedOrder, setView })
           <div className="order-row warehouse-card" key={order.id}>
             <div>
               <b>#{order.orderNo} — {order.buyer}</b>
-              <div className="meta">{s.lines} stavki · ukupno {s.total} · Isporuka: {order.delivery}{order.status !== "Nova" && <> · <span className={statusClass(order.status)}>{order.status}</span></>}</div>
+              <div className="meta">{stavkaText(s.lines)} · ukupno {s.total} · Isporuka: {order.delivery}{order.status !== "Nova" && <> · <span className={statusClass(order.status)}>{order.status}</span></>}</div>
               {order.note && <div className="note-small">Napomena: {order.note}</div>}
             </div>
             <div>
@@ -395,7 +422,7 @@ function Picking({ order, togglePicked, updateStatus, setView, isWarehousePage }
   return (
     <div className="card no-print">
       <h2>Izdvajanje robe — #{order.orderNo}</h2>
-      <p><b>{order.buyer}</b> · {s.lines} stavki · ukupno {s.total}{order.status !== "Nova" && <> · <span className={statusClass(order.status)}>{order.status}</span></>}</p>
+      <p><b>{order.buyer}</b> · {stavkaText(s.lines)} · ukupno {s.total}{order.status !== "Nova" && <> · <span className={statusClass(order.status)}>{order.status}</span></>}</p>
       {order.note && <div className="note-big">Napomena: {order.note}</div>}
       {order.items.map((item, index) => (
         <button key={index} className={"pick-row " + (item.picked ? "picked" : "")} onClick={() => togglePicked(order, index)}>
@@ -436,7 +463,7 @@ function PrintA4({ order, back, type }) {
         <p><b>Telefon:</b> {order.phone}</p>
         <p><b>Grad:</b> {order.city || "-"}</p>
         <p><b>Isporuka:</b> {order.delivery}</p>
-        <p><b>Ukupno:</b> {s.lines} stavki · ukupno {s.total}</p>
+        <p><b>Ukupno:</b> {stavkaText(s.lines)} · ukupno {s.total}</p>
       </div>
 
       {order.note && <p className="print-note"><b>Napomena:</b> {order.note}</p>}

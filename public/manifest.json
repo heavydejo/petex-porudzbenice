@@ -12,5 +12,7 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "scope": "/",
+  "description": "PETEX partner portal za naručivanje robe"
 }
