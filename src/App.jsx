@@ -88,6 +88,8 @@ export default function App() {
   const [adminUnlocked, setAdminUnlocked] = useState(!isAdminPage);
   const [warehouseUnlocked, setWarehouseUnlocked] = useState(!isWarehousePage);
   const [password, setPassword] = useState("");
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [showInstallHelp, setShowInstallHelp] = useState(false);
 
   const [form, setForm] = useState({
     orderNo: "",
@@ -118,7 +120,28 @@ export default function App() {
 
   const warehouseOrders = filteredOrders.filter((o) => o.status !== "Završeno");
 
+  useEffect(() => {
+    function handleBeforeInstallPrompt(event) {
+      event.preventDefault();
+      setInstallPrompt(event);
+    }
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+  }, []);
+
   useEffect(() => { loadOrders(); }, []);
+
+  async function installApp() {
+    if (installPrompt) {
+      installPrompt.prompt();
+      await installPrompt.userChoice;
+      setInstallPrompt(null);
+      setShowInstallHelp(false);
+      return;
+    }
+    setShowInstallHelp(true);
+  }
 
   async function loadOrders() {
     setLoading(true);
@@ -272,17 +295,40 @@ export default function App() {
           </div>
         </div>
 
-        {(isAdminPage || isWarehousePage) && (
-          <div>
-            {isAdminPage && <button className="black" onClick={() => setView("admin")}>Admin</button>}
-            {isWarehousePage && <button className="black" onClick={() => setView("warehouse")}>Magacin</button>}
-            <button className="white" onClick={loadOrders}>Osvježi</button>
-          </div>
-        )}
+        <div className="header-actions no-print">
+          <button className="install-btn" onClick={installApp}>⬇ Instaliraj aplikaciju</button>
+          {(isAdminPage || isWarehousePage) && (
+            <>
+              {isAdminPage && <button className="black" onClick={() => setView("admin")}>Admin</button>}
+              {isWarehousePage && <button className="black" onClick={() => setView("warehouse")}>Magacin</button>}
+              <button className="white" onClick={loadOrders}>Osvježi</button>
+            </>
+          )}
+        </div>
       </header>
 
       {message && <div className="notice no-print">{message}</div>}
       {loading && <div className="card no-print">Učitavanje...</div>}
+
+      {showInstallHelp && (
+        <div className="card no-print install-help">
+          <div className="install-help-head">
+            <h2>Instalacija PETEX aplikacije</h2>
+            <button className="white" onClick={() => setShowInstallHelp(false)}>Zatvori</button>
+          </div>
+          <p>Ako telefon ne otvori automatsku instalaciju, uradite ručno:</p>
+          <div className="install-grid">
+            <div>
+              <h3>Android / Chrome</h3>
+              <p>Otvorite meni ⋮ i izaberite <b>Install app</b> ili <b>Add to Home Screen</b>.</p>
+            </div>
+            <div>
+              <h3>iPhone / Safari</h3>
+              <p>Dodirnite <b>Share</b> dugme i izaberite <b>Add to Home Screen</b>.</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {view === "form" && (
         <div className="card no-print">
@@ -532,6 +578,12 @@ function Style() {
     .brand img { width:92px; height:auto; object-fit:contain; }
     .brand h1 { margin:0; font-size:34px; letter-spacing:1px; }
     .brand p { margin:0; color:#64748b; }
+    .header-actions { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+    .install-btn { background:#b91c1c; color:white; border:1px solid #991b1b; }
+    .install-help { border:2px solid #b91c1c; }
+    .install-help-head { display:flex; justify-content:space-between; gap:12px; align-items:center; }
+    .install-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .install-grid div { background:#f8fafc; border:1px solid #e2e8f0; border-radius:14px; padding:14px; }
     .card { background:white; border-radius:18px; padding:22px; box-shadow:0 2px 12px rgba(0,0,0,.08); margin-bottom:20px; }
     .grid, .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
     label { font-size:14px; font-weight:bold; display:block; }
